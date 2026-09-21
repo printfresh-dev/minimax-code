@@ -19,7 +19,7 @@ import {
 } from '../../features/inspection/capabilities.js';
 import { TuiReportInspectionPanel } from '../../features/inspection/report-panel.js';
 import { TuiModelPicker } from '../../features/model/picker.js';
-import { TuiCodexLogin } from '../../features/auth/codex-login.js';
+import { TuiOAuthLogin } from '../../features/auth/codex-login.js';
 import { TuiProviderManager } from '../../features/provider/manager.js';
 import {
   TuiProviderOnboarding,
@@ -69,7 +69,11 @@ import { TuiModelState } from './model-state.js';
 import { isRuntimeErrorCode, isRuntimeMethodNotImplemented } from '../support.js';
 import { resolveTuiThinkingChoice } from '../../features/model/thinking.js';
 import { McodeProviderApplication } from '../../../provider/application.js';
-import type { McodeCodexOAuthStatus, McodeProviderTemplate } from '../../../provider/contract.js';
+import type {
+  McodeCodexOAuthStatus,
+  McodeOAuthProviderInfo,
+  McodeProviderTemplate,
+} from '../../../provider/contract.js';
 import { McodePluginApplication } from '../../../plugin/application.js';
 import type { McodePluginRuntimeAccess, McodePluginView } from '../../../plugin/contract.js';
 import { formatTuiActionFailure } from '../../../user-facing-failure.js';
@@ -155,7 +159,7 @@ export class TuiFeatureFlow {
   private inspectionPanel: Component | undefined;
   private modelPicker: Component | undefined;
   private providerManager: Component | undefined;
-  private codexLogin: TuiCodexLogin | undefined;
+  private oauthLogin: TuiOAuthLogin | undefined;
   private providerOnboarding: Component | undefined;
   private transcriptScreen: TuiFeatureScreenHandle | undefined;
   private pluginScreen: TuiFeatureScreenHandle | undefined;
@@ -257,7 +261,7 @@ export class TuiFeatureFlow {
 
   stop(): void {
     this.stopped = true;
-    void this.codexLogin?.cancel();
+    void this.oauthLogin?.cancel();
     this.invalidateFeatureLoads({ includeSkillRefresh: true });
     this.modelState.stop();
     this.setCompacting(false);
@@ -713,7 +717,7 @@ export class TuiFeatureFlow {
                     return;
                   }
                   this.closeModelPicker();
-                  this.showCodexLogin('model');
+                  this.showOAuthLogin('openai-codex', 'OpenAI Codex', 'model');
                 },
               },
             }),
@@ -898,7 +902,10 @@ export class TuiFeatureFlow {
     const loadSequence = ++this.providerLoadSequence;
     let snapshot;
     try {
-      snapshot = await this.providerApplication.snapshot({ includeCodexOAuth: true });
+      snapshot = await this.providerApplication.snapshot({
+        includeCodexOAuth: true,
+        includeOAuthProviders: true,
+      });
     } catch (error) {
       if (!this.isStopped() && loadSequence === this.providerLoadSequence) {
         this.options.append(
@@ -913,7 +920,10 @@ export class TuiFeatureFlow {
     }
     if (this.isStopped() || loadSequence !== this.providerLoadSequence) return;
     const refresh = async () => {
-      const next = await this.providerApplication.snapshot({ includeCodexOAuth: true });
+      const next = await this.providerApplication.snapshot({
+        includeCodexOAuth: true,
+        includeOAuthProviders: true,
+      });
       // Await the roster before repainting: disabling a provider drops its
       // models, and a stale status line would keep advertising a model the
       // Runtime no longer resolves.
@@ -925,10 +935,12 @@ export class TuiFeatureFlow {
       snapshot,
       onRefresh: refresh,
       onTest: (providerId, modelId) => this.providerApplication.test(providerId, modelId),
-      onConnectCodex: () => {
+      onConnectOAuth: (providerId, providerName) => {
         this.closeProviderManager();
-        this.showCodexLogin('provider');
+        this.showOAuthLogin(providerId, providerName, 'provider');
       },
+      onDisconnectOAuth: (providerId) =>
+        this.providerApplication.disconnectOAuthProvider(providerId),
       onRefreshModels: (provider) => this.providerApplication.refreshModels(provider),
       onSaveCustom: (input) => this.providerApplication.saveCandidate(input),
       onSetMiniMaxApiKey: (apiKey) => this.providerApplication.setMiniMaxApiKey(apiKey),
@@ -954,38 +966,52 @@ export class TuiFeatureFlow {
     this.options.surface.show(manager);
   }
 
-  private showCodexLogin(returnTo: 'provider' | 'model'): void {
+  showOAuthLogin(
+    providerId: string,
+    providerName: string,
+    returnTo: 'provider' | 'model' | 'login',
+  ): void {
     if (this.isStopped()) return;
-    const panel = new TuiCodexLogin({
+    const panel = new TuiOAuthLogin({
+      providerId,
+      providerName,
       application: this.providerApplication,
       openExternalTarget:
         this.options.openExternalTarget ?? createTuiExternalTargetOpener(this.options.workspaceDir),
-      onConnected: () => {
-        if (this.codexLogin !== panel || this.isStopped()) return;
-        this.closeCodexLogin();
-        void this.finishCodexLogin(returnTo);
+      onAuthUrl: (url) => {
+        // Echo the full URL into the transcript unframed so it stays copyable;
+        // the panel truncates/wraps it inside borders.
+        this.options.append(`Complete ${providerName} sign-in in your browser:\n${url}`);
       },
-      onClose: () => this.closeCodexLogin(),
+      onConnected: () => {
+        if (this.oauthLogin !== panel || this.isStopped()) return;
+        this.closeOAuthLogin();
+        void this.finishOAuthLogin(providerName, returnTo);
+      },
+      onClose: () => this.closeOAuthLogin(),
       requestRender: this.options.onChanged,
     });
-    this.codexLogin = panel;
+    this.oauthLogin = panel;
     this.options.surface.show(panel);
     void panel.resume();
   }
 
-  private async finishCodexLogin(returnTo: 'provider' | 'model'): Promise<void> {
+  private async finishOAuthLogin(
+    providerName: string,
+    returnTo: 'provider' | 'model' | 'login',
+  ): Promise<void> {
     try {
       await this.modelState.refresh();
       if (this.isStopped()) return;
       this.options.controller.refreshStatusMetricsNow();
-      this.options.append('OpenAI Codex connected.');
+      this.options.append(`${providerName} connected.`);
       if (returnTo === 'model') await this.showModelPicker('');
-      else await this.showProviderManager();
+      else if (returnTo === 'provider') await this.showProviderManager();
     } catch (error) {
       if (!this.isStopped())
         this.options.append(
           formatTuiActionFailure(error, {
-            summary: "Couldn't refresh Codex models.",
+            summary: `Couldn't refresh ${providerName} models.`,
             nextStep: 'Reopen /model to retry.',
           }),
           'error',
@@ -1157,6 +1183,10 @@ export class TuiFeatureFlow {
     const sessionId = this.options.controller.snapshot().session?.sessionId;
     const account = await this.options.runtime.getAccountStatus(sessionId, { forceRefresh: true });
     return account.managedTokenPresent === true;
+  }
+
+  listOAuthProviders(): Promise<readonly McodeOAuthProviderInfo[]> {
+    return this.providerApplication.listOAuthProviders();
   }
 
   async runDailyCheckin(): Promise<void> {
@@ -1423,7 +1453,7 @@ export class TuiFeatureFlow {
   private closeFeatureSurfaces(): void {
     this.closeModelPicker();
     this.closeProviderManager();
-    this.closeCodexLogin();
+    this.closeOAuthLogin();
     this.closeProviderOnboarding();
     this.closeInspectionPanel();
     this.closeTranscript();
@@ -1434,7 +1464,7 @@ export class TuiFeatureFlow {
     if (panel === this.inspectionPanel) this.inspectionPanel = undefined;
     if (panel === this.modelPicker) this.modelPicker = undefined;
     if (panel === this.providerManager) this.providerManager = undefined;
-    if (panel === this.codexLogin) this.codexLogin = undefined;
+    if (panel === this.oauthLogin) this.oauthLogin = undefined;
     if (panel === this.providerOnboarding) this.providerOnboarding = undefined;
   }
 
@@ -1457,9 +1487,9 @@ export class TuiFeatureFlow {
     if (picker) this.options.surface.close(picker);
   }
 
-  private closeCodexLogin(): void {
-    const panel = this.codexLogin;
-    this.codexLogin = undefined;
+  private closeOAuthLogin(): void {
+    const panel = this.oauthLogin;
+    this.oauthLogin = undefined;
     if (panel) this.options.surface.close(panel);
   }
 

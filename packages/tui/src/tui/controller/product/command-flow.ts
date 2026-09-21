@@ -8,7 +8,11 @@ import {
 } from '../../commands/catalog.js';
 import type { TuiComposerDraft } from '../../features/composer/draft.js';
 import type { TuiWorkspaceRoots } from '../../features/composer/workspace-roots.js';
-import { TuiLoginRegionPicker } from '../../features/auth/login-region-picker.js';
+import {
+  TuiLoginProviderPicker,
+  TuiLoginRegionPicker,
+  type TuiLoginProviderOption,
+} from '../../features/auth/login-region-picker.js';
 import { TuiPermissionModePicker } from '../../features/interaction/permission-mode-picker.js';
 import { TuiSettingsPicker } from '../../features/settings/picker.js';
 import { TuiHotkeysPicker } from '../../features/settings/hotkeys-picker.js';
@@ -29,6 +33,7 @@ import type { TuiGoalFlow } from './goal-flow.js';
 import type { TuiPlanModeFlow } from '../interaction/plan-mode-flow.js';
 import type { TuiPermissionModeFlow } from '../interaction/permission-mode-flow.js';
 import type { MavisRegion } from '@mavis/config';
+import type { McodeOAuthProviderInfo } from '../../../provider/contract.js';
 import type { McodeAuthPort } from '../../../auth/application.js';
 import { markTuiAuthorizationUrl } from '../../../auth/authorization-url.js';
 import type { TuiMode } from '../../engine/public.js';
@@ -160,6 +165,7 @@ export class TuiCommandFlow {
   readonly catalog: TuiCommandCatalog;
   private preparationTail: Promise<void> = Promise.resolve();
   private loginRegionPicker: TuiLoginRegionPicker | undefined;
+  private loginProviderPicker: TuiLoginProviderPicker | undefined;
   private pendingLoginContinuation: 'checkin' | undefined;
   private permissionModePicker: TuiPermissionModePicker | undefined;
   private settingsPicker: TuiSettingsPicker | undefined;
@@ -1169,7 +1175,7 @@ export class TuiCommandFlow {
       },
       login: () => {
         this.pendingLoginContinuation = undefined;
-        this.showLoginRegionPicker();
+        void this.showLoginProviderPicker();
       },
       logout: () => this.runAuthCommand('logout'),
       doctor: async () => this.options.featureFlow.showConfigurationInspection(false),
@@ -1420,6 +1426,79 @@ export class TuiCommandFlow {
   startMiniMaxLogin(): void {
     this.pendingLoginContinuation = undefined;
     this.showLoginRegionPicker();
+  }
+
+  /**
+   * `/login` first picks the credential to sign in with: the MiniMax account
+   * while no managed token exists, plus every OAuth provider the Runtime
+   * exposes. MiniMax continues into the region picker; OAuth providers open
+   * the generic sign-in panel.
+   */
+  private async showLoginProviderPicker(): Promise<void> {
+    const managedTokenPresent =
+      this.options.controller.snapshot().account?.managedTokenPresent === true;
+    let providers: readonly McodeOAuthProviderInfo[];
+    try {
+      providers = await this.options.featureFlow.listOAuthProviders();
+    } catch (error) {
+      if (!managedTokenPresent && this.options.auth) {
+        this.showLoginRegionPicker();
+        return;
+      }
+      this.options.append(
+        formatTuiActionFailure(error, {
+          summary: "Couldn't load sign-in providers.",
+          nextStep: 'Retry /login.',
+        }),
+        'warning',
+      );
+      return;
+    }
+    const entries: TuiLoginProviderOption[] = [
+      ...(managedTokenPresent
+        ? []
+        : [
+            {
+              value: 'minimax',
+              label: 'MiniMax Account',
+              description: 'Token Plan sign-in',
+            },
+          ]),
+      ...providers.map((provider) => ({
+        value: provider.id,
+        label: provider.name,
+        description: 'OAuth sign-in',
+      })),
+    ];
+    if (entries.length === 0) {
+      this.options.append('No sign-in providers are available in this build.', 'warning');
+      return;
+    }
+    if (entries.length === 1 && entries[0]?.value === 'minimax') {
+      this.showLoginRegionPicker();
+      return;
+    }
+    if (this.loginProviderPicker) this.options.surface.close(this.loginProviderPicker);
+    const picker = new TuiLoginProviderPicker(
+      entries,
+      (providerId) => {
+        if (this.loginProviderPicker !== picker) return;
+        this.options.surface.close(picker);
+        this.loginProviderPicker = undefined;
+        if (providerId === 'minimax') {
+          this.showLoginRegionPicker();
+          return;
+        }
+        const name = entries.find((entry) => entry.value === providerId)?.label ?? providerId;
+        this.options.featureFlow.showOAuthLogin(providerId, name, 'login');
+      },
+      () => {
+        this.options.surface.close(picker);
+        if (this.loginProviderPicker === picker) this.loginProviderPicker = undefined;
+      },
+    );
+    this.loginProviderPicker = picker;
+    this.options.surface.show(picker);
   }
 
   private showLoginRegionPicker(): void {

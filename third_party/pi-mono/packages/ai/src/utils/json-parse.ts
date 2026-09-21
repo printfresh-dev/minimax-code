@@ -122,3 +122,37 @@ export function parseStreamingJson<T = Record<string, unknown>>(partialJson: str
 		}
 	}
 }
+
+/**
+ * Default minimum byte growth before `parseStreamingJsonThrottled` will
+ * re-parse a streaming tool-call argument buffer. Acts as the floor of the
+ * geometric gate — see {@link parseStreamingJsonThrottled}.
+ */
+export const STREAMING_JSON_PARSE_MIN_GROWTH = 256;
+
+/**
+ * Throttled variant of {@link parseStreamingJson} for the per-delta hot path.
+ *
+ * Tool calls arrive as a long sequence of small deltas — calling
+ * `parseStreamingJson(buffer)` on every delta re-parses the entire buffer
+ * each time, giving O(N²) work in the total buffer length. Instead the gate
+ * scales geometrically: once the buffer is large, a re-parse requires growth
+ * proportional to the current length (`len / 32`, floored at
+ * `minGrowthBytes`). Parse points then form a geometric progression, so a
+ * buffer of length N is parsed O(log N) times for O(N log N) total work,
+ * while small buffers keep the snappy fixed-cadence updates.
+ *
+ * @returns the parsed object plus the new `parsedLen` to persist; or `null`
+ *          when the buffer has not grown enough to warrant a re-parse.
+ */
+export function parseStreamingJsonThrottled<T = Record<string, unknown>>(
+	partialJson: string | undefined,
+	lastParsedLen: number,
+	minGrowthBytes: number = STREAMING_JSON_PARSE_MIN_GROWTH,
+): { value: T; parsedLen: number } | null {
+	const len = partialJson?.length ?? 0;
+	if (len === 0) return null;
+	const growth = Math.max(minGrowthBytes, len >> 5);
+	if (lastParsedLen > 0 && len - lastParsedLen < growth) return null;
+	return { value: parseStreamingJson<T>(partialJson), parsedLen: len };
+}

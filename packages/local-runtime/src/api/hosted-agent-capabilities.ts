@@ -5,7 +5,7 @@ import type {
   PiLLMRequestFailureHook,
   PiLLMRequestObserver,
 } from '@mavis/agent-core/pi-turn-runner';
-import { resolveAgentCapabilities, type AgentBuiltinSkillId } from '@mavis/config';
+import { oauthAuthFileName, resolveAgentCapabilities, type AgentBuiltinSkillId } from '@mavis/config';
 import type { IRuntimeEvent } from '@mavis/protocol';
 
 import { createChildBashLifecycle } from '../background-task/child-bash-lifecycle.js';
@@ -164,7 +164,9 @@ export function createHostedAgentCapabilities(
     routingContextGetter: host.routingContextGetter,
     fetchImpl: host.fetchImpl,
     providerAuthGetter: (provider: string) =>
-      AuthStorage.create(join(host.configGetter().dataDir, 'codex-auth.json')).getApiKey(provider, {
+      AuthStorage.create(
+        join(host.configGetter().dataDir, oauthAuthFileName(provider)),
+      ).getApiKey(provider, {
         includeFallback: false,
       }),
     turnRuntimeFacts,

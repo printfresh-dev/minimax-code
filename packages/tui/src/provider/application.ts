@@ -4,6 +4,9 @@ import type {
   McodeCodexOAuthStatus,
   McodeCreateProviderInput,
   McodeMiniMaxModelSource,
+  McodeOAuthProviderInfo,
+  McodeOAuthProviderLoginOptions,
+  McodeOAuthProviderStatus,
   McodeProviderRuntimePort,
   McodeSaveProviderCandidateInput,
   McodeSaveProviderCandidateResult,
@@ -19,14 +22,17 @@ export class McodeProviderApplication {
   constructor(private readonly port: McodeProviderRuntimePort) {}
 
   async snapshot(
-    options: { readonly includeCodexOAuth?: boolean } = {},
+    options: { readonly includeCodexOAuth?: boolean; readonly includeOAuthProviders?: boolean } = {},
   ): Promise<McodeProviderSnapshot> {
-    const [customProviders, minimaxStatus, minimaxModelSource, codexOAuthStatus] =
+    const [customProviders, minimaxStatus, minimaxModelSource, codexOAuthStatus, oauthProviders] =
       await Promise.all([
         this.port.listUserModelProviders(),
         this.port.getMiniMaxApiKeyStatus(),
         this.port.getMiniMaxModelSource(),
-        options.includeCodexOAuth ? this.port.getCodexOAuthStatus() : undefined,
+      options.includeCodexOAuth || options.includeOAuthProviders
+        ? this.port.getCodexOAuthStatus()
+        : undefined,
+        options.includeOAuthProviders ? this.listOAuthProviderViews() : undefined,
       ]);
     return {
       minimaxModelSource,
@@ -34,6 +40,7 @@ export class McodeProviderApplication {
         ...(!codexOAuthStatus || codexOAuthStatus.state === 'hidden'
           ? []
           : [normalizeCodexOAuthProvider(codexOAuthStatus)]),
+        ...(oauthProviders ?? []),
         {
           providerId: 'minimax_oauth',
           name: 'MiniMax OAuth',
@@ -76,6 +83,46 @@ export class McodeProviderApplication {
   cancelCodexOAuthLogin(loginId: string): Promise<McodeCodexOAuthStatus> {
     return this.port.cancelCodexOAuthLogin(loginId);
   }
+
+  listOAuthProviders(): Promise<readonly McodeOAuthProviderInfo[]> {
+    return this.port.listOAuthProviders();
+  }
+
+  getOAuthProviderStatus(providerId: string): Promise<McodeOAuthProviderStatus> {
+    return this.port.getOAuthProviderStatus(providerId);
+  }
+
+  connectOAuthProvider(
+    providerId: string,
+    options?: McodeOAuthProviderLoginOptions,
+  ): Promise<McodeOAuthProviderStatus> {
+    return this.port.startOAuthProviderLogin(providerId, options);
+  }
+
+  cancelOAuthProviderLogin(
+    providerId: string,
+    loginId: string,
+  ): Promise<McodeOAuthProviderStatus> {
+    return this.port.cancelOAuthProviderLogin(providerId, loginId);
+  }
+
+  disconnectOAuthProvider(providerId: string): Promise<void> {
+    return this.port.removeOAuthProviderCredentials(providerId);
+  }
+
+  private async listOAuthProviderViews(): Promise<McodeProviderView[]> {
+    const infos = await this.port.listOAuthProviders();
+    const views = await Promise.all(
+      infos
+        .filter((info) => info.id !== 'openai-codex')
+        .map(async (info) => {
+          const status = await this.port.getOAuthProviderStatus(info.id);
+          return normalizeOAuthProvider(info, status);
+        }),
+    );
+    return views.filter((view) => view.status?.state !== 'hidden');
+  }
+
 
   async setMiniMaxApiKey(apiKey: string, saveAndUse = true): Promise<void> {
     await this.port.upsertMiniMaxApiKey({ apiKey, saveAndUse });
@@ -157,6 +204,26 @@ function normalizeCodexOAuthProvider(status: McodeCodexOAuthStatus): McodeProvid
     enabled: true,
     readOnly: true,
     hasApiKey: false,
+    models: [],
+    status: {
+      state: status.state,
+      ...(status.error ? { lastErrorMessage: status.error } : {}),
+    },
+  };
+}
+
+function normalizeOAuthProvider(
+  info: McodeOAuthProviderInfo,
+  status: McodeOAuthProviderStatus,
+): McodeProviderView {
+  return {
+    providerId: info.id,
+    name: info.name,
+    kind: 'oauth',
+    active: status.state === 'connected',
+    enabled: true,
+    readOnly: true,
+    hasApiKey: status.state === 'connected',
     models: [],
     status: {
       state: status.state,

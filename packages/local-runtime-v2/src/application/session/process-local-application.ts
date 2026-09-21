@@ -2,10 +2,12 @@ import type { GlobalEvent } from '@mavis/shared/global-events';
 import { isLegacyManagedMinimaxProvider } from '@mavis/config';
 
 import type {
-  CodexOAuthManager,
+  CodexOAuthStartResult,
+  CodexOAuthStatus,
   LocalModelProviderService,
   ModelSystemOwner,
   ModelProviderView,
+  OAuthProviderManager,
   UserModelInputView,
 } from '../../service/model-system/index.js';
 import { watchGlobalEvents, watchProcessEvents } from '../events.js';
@@ -34,7 +36,14 @@ export interface ProcessLocalApplicationOptions {
     readonly application: Pick<ModelProviderApplication, 'list' | 'select'>;
     readonly providers: LocalModelProviderService;
     readonly listProviderPresets: ModelSystemOwner['listProviderPresets'];
-    readonly oauth: Pick<CodexOAuthManager, 'getStatus' | 'startLogin' | 'cancelLogin'>;
+    readonly oauth: Pick<
+      OAuthProviderManager,
+      | 'listProviders'
+      | 'getProviderStatus'
+      | 'startProviderLogin'
+      | 'cancelProviderLogin'
+      | 'removeProviderCredentials'
+    >;
   };
   readonly peripherals: Required<
     Pick<
@@ -130,9 +139,31 @@ export function createProcessLocalApplication(
     },
     modelProviders: {
       listProviderPresets: () => options.modelProvider.listProviderPresets(),
-      getCodexOAuthStatus: async () => options.modelProvider.oauth.getStatus(),
-      startCodexOAuthLogin: (input) => options.modelProvider.oauth.startLogin(input),
-      cancelCodexOAuthLogin: async (loginId) => options.modelProvider.oauth.cancelLogin(loginId),
+      getCodexOAuthStatus: async () =>
+        (await options.modelProvider.oauth.getProviderStatus('openai-codex')) as CodexOAuthStatus,
+      startCodexOAuthLogin: async (input) =>
+        (await options.modelProvider.oauth.startProviderLogin(
+          'openai-codex',
+          input,
+        )) as CodexOAuthStartResult,
+      cancelCodexOAuthLogin: async (loginId) =>
+        (await options.modelProvider.oauth.cancelProviderLogin(
+          'openai-codex',
+          loginId,
+        )) as CodexOAuthStatus,
+      listOAuthProviders: async () =>
+        options.modelProvider.oauth
+          .listProviders()
+          .map((spec) => ({ id: spec.id, name: spec.name })),
+      getOAuthProviderStatus: async (providerId) =>
+        options.modelProvider.oauth.getProviderStatus(providerId),
+      startOAuthProviderLogin: (providerId, input) =>
+        options.modelProvider.oauth.startProviderLogin(providerId, input),
+      cancelOAuthProviderLogin: async (providerId, loginId) =>
+        options.modelProvider.oauth.cancelProviderLogin(providerId, loginId),
+      removeOAuthProviderCredentials: async (providerId) => {
+        options.modelProvider.oauth.removeProviderCredentials(providerId);
+      },
       listUser: async () =>
         options.modelProvider.providers.listUserProviders().map(toProviderRecord),
       getMiniMaxApiKeyStatus: async () => options.modelProvider.providers.getMinimaxApiKeyStatus(),

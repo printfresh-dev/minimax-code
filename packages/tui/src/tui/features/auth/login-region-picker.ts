@@ -58,3 +58,49 @@ export class TuiLoginRegionPicker implements Component {
     });
   }
 }
+
+export interface TuiLoginProviderOption {
+  readonly value: string;
+  readonly label: string;
+  readonly description: string;
+}
+
+/** `/login` entry point: MiniMax account plus every OAuth provider the Runtime exposes. */
+export class TuiLoginProviderPicker implements Component {
+  readonly fullscreenViewport = true;
+  readonly handlesViewportKeys = true;
+  private readonly list: SelectList;
+
+  constructor(
+    providers: readonly TuiLoginProviderOption[],
+    onSelect: (providerId: string) => void,
+    onCancel: () => void,
+  ) {
+    this.list = new SelectList([...providers], providers.length, theme, {
+      minPrimaryColumnWidth: 16,
+      maxPrimaryColumnWidth: 28,
+    });
+    this.list.onSelect = (item) => onSelect(item.value);
+    this.list.onCancel = onCancel;
+  }
+
+  handleInput(data: string): void {
+    this.list.handleInput(data);
+  }
+
+  invalidate(): void {
+    this.list.invalidate();
+  }
+
+  render(width: number): string[] {
+    return this.renderViewport(width, 20);
+  }
+
+  renderViewport(width: number, height: number): string[] {
+    const layout = panelLayout(width, height, '↑↓ select · Enter continue · Esc cancel');
+    return layout.render({
+      title: 'Choose a sign-in provider',
+      body: this.list.renderViewport(layout.contentWidth, layout.bodyHeight),
+    });
+  }
+}

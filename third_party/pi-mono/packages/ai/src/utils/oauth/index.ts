@@ -13,8 +13,11 @@
 // ============================================================================
 
 import { anthropicOAuthProvider } from './anthropic.ts';
+import { devinOAuthProvider } from './devin.ts';
 import { githubCopilotOAuthProvider } from './github-copilot.ts';
+import { googleGeminiCliOAuthProvider } from './google-gemini-cli.ts';
 import { openaiCodexOAuthProvider } from './openai-codex.ts';
+import { xaiOAuthProvider } from './xai-oauth.ts';
 import type {
   OAuthCredentials,
   OAuthProviderId,
@@ -24,6 +27,8 @@ import type {
 } from './types.ts';
 
 export { anthropicOAuthProvider, loginAnthropic, refreshAnthropicToken } from './anthropic.ts';
+// Devin
+export { devinOAuthProvider, loginDevin } from './devin.ts';
 export * from './device-code.ts';
 // GitHub Copilot
 export {
@@ -33,6 +38,12 @@ export {
   normalizeDomain,
   refreshGitHubCopilotToken,
 } from './github-copilot.ts';
+// Google Gemini CLI (Cloud Code Assist)
+export {
+  googleGeminiCliOAuthProvider,
+  loginGoogleGeminiCli,
+  refreshGoogleGeminiCliToken,
+} from './google-gemini-cli.ts';
 // OpenAI Codex (ChatGPT OAuth)
 export {
   loginOpenAICodex,
@@ -42,13 +53,18 @@ export {
   openaiCodexOAuthProvider,
   refreshOpenAICodexToken,
 } from './openai-codex.ts';
+// xAI (Grok CLI device code)
+export { loginXaiOAuth, refreshXaiOAuthToken, xaiOAuthProvider } from './xai-oauth.ts';
 
 export * from './types.ts';
 
 const BUILT_IN_OAUTH_PROVIDERS: OAuthProviderInterface[] = [
   anthropicOAuthProvider,
+  devinOAuthProvider,
   githubCopilotOAuthProvider,
+  googleGeminiCliOAuthProvider,
   openaiCodexOAuthProvider,
+  xaiOAuthProvider,
 ];
 
 const oauthProviderRegistry = new Map<string, OAuthProviderInterface>(

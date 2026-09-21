@@ -1,5 +1,10 @@
 import { McodeProviderApplication } from '../provider/application.js';
-import type { McodeProviderApiFormat, McodeProviderSnapshot } from '../provider/contract.js';
+import type {
+  McodeCodexOAuthLoginMethod,
+  McodeProviderApiFormat,
+  McodeProviderSnapshot,
+} from '../provider/contract.js';
+import { createTuiExternalTargetOpener } from '../host/open-external.js';
 import { prepareTuiDataDir } from '../runtime/data-dir.js';
 import { createTuiRuntime, shutdownTuiRuntime } from '../runtime/lifecycle.js';
 import { formatTuiActionFailure } from '../user-facing-failure.js';
@@ -19,6 +24,13 @@ export type McodeProviderCliRequest =
       readonly saveAndUse?: boolean;
     }
   | { readonly action: 'remove'; readonly providerId: string; readonly confirmed: boolean }
+  | {
+      readonly action: 'login';
+      readonly providerId: string;
+      readonly method?: McodeCodexOAuthLoginMethod;
+      readonly browser?: boolean;
+    }
+  | { readonly action: 'logout'; readonly providerId: string }
   | {
       readonly action: 'test';
       readonly providerId: string;
@@ -51,7 +63,10 @@ export async function runMcodeProviderCommand(
   try {
     const { request } = options;
     if (request.action === 'list') {
-      return formatSnapshot(await context.application.snapshot(), Boolean(request.json));
+      return formatSnapshot(
+        await context.application.snapshot({ includeOAuthProviders: true }),
+        Boolean(request.json),
+      );
     }
     if (request.action === 'add') {
       const envName = request.apiKeyEnv?.trim() || 'MCODE_PROVIDER_API_KEY';
@@ -110,6 +125,13 @@ export async function runMcodeProviderCommand(
       }
       await context.application.remove(request.providerId);
       return `Provider removed: ${request.providerId}`;
+    }
+    if (request.action === 'login') {
+      return runOAuthProviderLogin(context.application, request, options.workspaceDir);
+    }
+    if (request.action === 'logout') {
+      await context.application.disconnectOAuthProvider(request.providerId);
+      return `Provider signed out: ${request.providerId}`;
     }
     if (request.action === 'test') {
       if (request.providerId === 'minimax_oauth') {
@@ -174,6 +196,69 @@ async function createProviderCommandContext(
   };
 }
 
+const OAUTH_LOGIN_TIMEOUT_MS = 15 * 60_000;
+const OAUTH_LOGIN_POLL_MS = 2_000;
+
+async function runOAuthProviderLogin(
+  application: McodeProviderApplication,
+  request: Extract<McodeProviderCliRequest, { readonly action: 'login' }>,
+  workspaceDir = process.cwd(),
+): Promise<string> {
+  const providers = await application.listOAuthProviders();
+  const info = providers.find((provider) => provider.id === request.providerId);
+  if (!info) {
+    const known = providers.map((provider) => provider.id).join(', ') || 'none';
+    throw new Error(`Unknown OAuth provider "${request.providerId}". Available: ${known}.`);
+  }
+  const stderr = (line: string) => process.stderr.write(`${line}\n`);
+  const openExternalTarget = createTuiExternalTargetOpener(workspaceDir);
+  const deadline = Date.now() + OAUTH_LOGIN_TIMEOUT_MS;
+  let status = await application.connectOAuthProvider(request.providerId, {
+    ...(request.method ? { method: request.method } : {}),
+  });
+  let announcedUrl: string | undefined;
+  let announcedCode: string | undefined;
+  for (;;) {
+    if (status.state === 'connected') return `${info.name} connected.`;
+    if (status.state === 'failed' || status.state === 'hidden') {
+      throw new Error(status.error ?? `${info.name} sign-in is unavailable in this build.`);
+    }
+    if (status.state === 'pending') {
+      const device = status.deviceCode;
+      if (device && device.userCode !== announcedCode) {
+        announcedCode = device.userCode;
+        stderr(`Enter code: ${device.userCode}`);
+        stderr(`Open ${device.verificationUri} in a browser and enter the code.`);
+      } else if (!device && status.authUrl && status.authUrl !== announcedUrl) {
+        announcedUrl = status.authUrl;
+        stderr(`Complete ${info.name} sign-in in your browser:`);
+        stderr(status.authUrl);
+        if (request.browser !== false) {
+          try {
+            await openExternalTarget(status.authUrl);
+          } catch {
+            stderr('Could not open a browser; open the link above manually.');
+          }
+        }
+      }
+    }
+    if (Date.now() >= deadline) {
+      if (status.loginId) {
+        await application
+          .cancelOAuthProviderLogin(request.providerId, status.loginId)
+          .catch(() => undefined);
+      }
+      throw new Error(`${info.name} sign-in timed out after 15 minutes.`);
+    }
+    {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      setTimeout(resolve, OAUTH_LOGIN_POLL_MS);
+      await promise;
+    }
+    status = await application.getOAuthProviderStatus(request.providerId);
+  }
+}
+
 function formatSnapshot(snapshot: McodeProviderSnapshot, json: boolean): string {
   if (json) return JSON.stringify(snapshot, null, 2);
   const lines = snapshot.providers.map((provider) => {
@@ -181,9 +266,11 @@ function formatSnapshot(snapshot: McodeProviderSnapshot, json: boolean): string 
     const credential =
       provider.kind === 'minimax-oauth'
         ? 'managed login'
-        : provider.hasApiKey
-          ? (provider.maskedApiKey ?? 'key saved')
-          : 'no key';
+        : provider.kind === 'codex-oauth' || provider.kind === 'oauth'
+          ? (provider.status?.state ?? 'disconnected')
+          : provider.hasApiKey
+            ? (provider.maskedApiKey ?? 'key saved')
+            : 'no key';
     return `${provider.active ? '*' : ' '} ${provider.providerId}\t${state}\t${credential}`;
   });
   return lines.join('\n');

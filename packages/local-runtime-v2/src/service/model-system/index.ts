@@ -32,6 +32,24 @@ export {
   type InitializeModelSystemOptions,
   type ModelSystemOwner,
 } from './initialize.js';
+export {
+  OAuthProviderError,
+  OAuthProviderManager,
+  type OAuthAuthStorage,
+  type OAuthProviderDeviceCode,
+  type OAuthProviderLoginOptions,
+  type OAuthProviderManagerDeps,
+  type OAuthProviderStartResult,
+  type OAuthProviderState,
+  type OAuthProviderStatus,
+} from './oauth-manager.js';
+export {
+  getOAuthProviderSpec,
+  OAUTH_PROVIDER_SPECS,
+  type OAuthLoginMethod,
+  type OAuthProviderSpec,
+  type OAuthStoredCredentials,
+} from './oauth-providers.js';
 export * from './codex-oauth.js';
 export {
   CUSTOM_PROVIDER_ID_PREFIX,

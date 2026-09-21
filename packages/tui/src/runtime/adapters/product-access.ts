@@ -26,6 +26,9 @@ import type {
   McodeCodexOAuthLoginOptions,
   McodeCodexOAuthStatus,
   McodeMiniMaxModelSource,
+  McodeOAuthProviderInfo,
+  McodeOAuthProviderLoginOptions,
+  McodeOAuthProviderStatus,
   McodeProviderTemplate,
   McodeProviderTestResult,
   McodeRuntimeProviderView,
@@ -153,6 +156,42 @@ export class TuiProductAccess {
     return (await this.context
       .service("provider.codex-oauth.cancel")
       .cancelCodexOAuthLogin(loginId)) as McodeCodexOAuthStatus;
+  }
+
+  async listOAuthProviders(): Promise<readonly McodeOAuthProviderInfo[]> {
+    return (await this.context
+      .service("provider.oauth.list")
+      .listOAuthProviders()) as readonly McodeOAuthProviderInfo[];
+  }
+
+  async getOAuthProviderStatus(providerId: string): Promise<McodeOAuthProviderStatus> {
+    return (await this.context
+      .service("provider.oauth.status")
+      .getOAuthProviderStatus(providerId)) as McodeOAuthProviderStatus;
+  }
+
+  async startOAuthProviderLogin(
+    providerId: string,
+    options?: McodeOAuthProviderLoginOptions,
+  ): Promise<McodeOAuthProviderStatus> {
+    return (await this.context
+      .service("provider.oauth.start")
+      .startOAuthProviderLogin(providerId, options)) as McodeOAuthProviderStatus;
+  }
+
+  async cancelOAuthProviderLogin(
+    providerId: string,
+    loginId: string,
+  ): Promise<McodeOAuthProviderStatus> {
+    return (await this.context
+      .service("provider.oauth.cancel")
+      .cancelOAuthProviderLogin(providerId, loginId)) as McodeOAuthProviderStatus;
+  }
+
+  async removeOAuthProviderCredentials(providerId: string): Promise<void> {
+    await this.context
+      .service("provider.oauth.remove")
+      .removeOAuthProviderCredentials(providerId);
   }
 
   async getMiniMaxApiKeyStatus(): Promise<{

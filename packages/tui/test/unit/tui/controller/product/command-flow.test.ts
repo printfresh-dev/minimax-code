@@ -10,7 +10,6 @@ function createFeatureFlowMock() {
     skillCommands: () => [],
     waitForWelcomeModelSelection: vi.fn(async () => undefined),
     applyPendingModelSelection: vi.fn(async () => undefined),
-    applyPendingModelSelection: vi.fn(async () => undefined),
     showChangelog: vi.fn(async () => undefined),
   };
 }

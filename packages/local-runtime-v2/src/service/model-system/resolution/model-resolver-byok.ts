@@ -142,7 +142,10 @@ export function byokEffectiveOutputLimit(modelConfig: LocalModelConfig | undefin
 function resolveCustomProviderApi(value: unknown): Api {
   if (
     typeof value === 'string' &&
-    (isModelProviderApi(value) || value === 'openai-codex-responses')
+    (isModelProviderApi(value) ||
+      value === 'openai-codex-responses' ||
+      value === 'google-gemini-cli' ||
+      value === 'devin-agent')
   ) {
     return value;
   }

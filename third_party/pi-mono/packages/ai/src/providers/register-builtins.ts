@@ -20,6 +20,8 @@ import type { MistralOptions } from "./mistral.ts";
 import type { OpenAICodexResponsesOptions } from "./openai-codex-responses.ts";
 import type { OpenAICompletionsOptions } from "./openai-completions.ts";
 import type { OpenAIResponsesOptions } from "./openai-responses.ts";
+import type { DevinOptions } from "./devin.ts";
+import type { GoogleGeminiCliOptions } from "./google-gemini-cli.ts";
 
 interface LazyProviderModule<
 	TApi extends Api,
@@ -52,6 +54,16 @@ interface GoogleProviderModule {
 interface GoogleVertexProviderModule {
 	streamGoogleVertex: StreamFunction<"google-vertex", GoogleVertexOptions>;
 	streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStreamOptions>;
+}
+
+interface DevinProviderModule {
+	streamDevin: StreamFunction<"devin-agent", DevinOptions>;
+	streamSimpleDevin: StreamFunction<"devin-agent", SimpleStreamOptions>;
+}
+
+interface GoogleGeminiCliProviderModule {
+	streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGeminiCliOptions>;
+	streamSimpleGoogleGeminiCli: StreamFunction<"google-gemini-cli", SimpleStreamOptions>;
 }
 
 interface MistralProviderModule {
@@ -103,6 +115,12 @@ let googleProviderModulePromise:
 	| undefined;
 let googleVertexProviderModulePromise:
 	| Promise<LazyProviderModule<"google-vertex", GoogleVertexOptions, SimpleStreamOptions>>
+	| undefined;
+let devinProviderModulePromise:
+	| Promise<LazyProviderModule<"devin-agent", DevinOptions, SimpleStreamOptions>>
+	| undefined;
+let googleGeminiCliProviderModulePromise:
+	| Promise<LazyProviderModule<"google-gemini-cli", GoogleGeminiCliOptions, SimpleStreamOptions>>
 	| undefined;
 let mistralProviderModulePromise:
 	| Promise<LazyProviderModule<"mistral-conversations", MistralOptions, SimpleStreamOptions>>
@@ -257,6 +275,32 @@ function loadGoogleVertexProviderModule(): Promise<
 	return googleVertexProviderModulePromise;
 }
 
+function loadDevinProviderModule(): Promise<
+	LazyProviderModule<"devin-agent", DevinOptions, SimpleStreamOptions>
+> {
+	devinProviderModulePromise ||= importNodeOnlyProvider("./devin.ts").then((module) => {
+		const provider = module as DevinProviderModule;
+		return {
+			stream: provider.streamDevin,
+			streamSimple: provider.streamSimpleDevin,
+		};
+	});
+	return devinProviderModulePromise;
+}
+
+function loadGoogleGeminiCliProviderModule(): Promise<
+	LazyProviderModule<"google-gemini-cli", GoogleGeminiCliOptions, SimpleStreamOptions>
+> {
+	googleGeminiCliProviderModulePromise ||= importNodeOnlyProvider("./google-gemini-cli.ts").then((module) => {
+		const provider = module as GoogleGeminiCliProviderModule;
+		return {
+			stream: provider.streamGoogleGeminiCli,
+			streamSimple: provider.streamSimpleGoogleGeminiCli,
+		};
+	});
+	return googleGeminiCliProviderModulePromise;
+}
+
 function loadMistralProviderModule(): Promise<
 	LazyProviderModule<"mistral-conversations", MistralOptions, SimpleStreamOptions>
 > {
@@ -333,6 +377,10 @@ export const streamGoogle = createLazyStream(loadGoogleProviderModule);
 export const streamSimpleGoogle = createLazySimpleStream(loadGoogleProviderModule);
 export const streamGoogleVertex = createLazyStream(loadGoogleVertexProviderModule);
 export const streamSimpleGoogleVertex = createLazySimpleStream(loadGoogleVertexProviderModule);
+export const streamDevin = createLazyStream(loadDevinProviderModule);
+export const streamSimpleDevin = createLazySimpleStream(loadDevinProviderModule);
+export const streamGoogleGeminiCli = createLazyStream(loadGoogleGeminiCliProviderModule);
+export const streamSimpleGoogleGeminiCli = createLazySimpleStream(loadGoogleGeminiCliProviderModule);
 export const streamMistral = createLazyStream(loadMistralProviderModule);
 export const streamSimpleMistral = createLazySimpleStream(loadMistralProviderModule);
 export const streamOpenAICodexResponses = createLazyStream(loadOpenAICodexResponsesProviderModule);
@@ -391,6 +439,18 @@ export function registerBuiltInApiProviders(): void {
 		api: "google-vertex",
 		stream: streamGoogleVertex,
 		streamSimple: streamSimpleGoogleVertex,
+	});
+
+	registerApiProvider({
+		api: "google-gemini-cli",
+		stream: streamGoogleGeminiCli,
+		streamSimple: streamSimpleGoogleGeminiCli,
+	});
+
+	registerApiProvider({
+		api: "devin-agent",
+		stream: streamDevin,
+		streamSimple: streamSimpleDevin,
 	});
 
 	registerApiProvider({

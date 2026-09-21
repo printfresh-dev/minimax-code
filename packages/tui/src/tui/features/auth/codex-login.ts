@@ -1,7 +1,7 @@
 import type { McodeProviderApplication } from '../../../provider/application.js';
 import type {
   McodeCodexOAuthLoginMethod,
-  McodeCodexOAuthStatus,
+  McodeOAuthProviderStatus,
 } from '../../../provider/contract.js';
 import { getKeybindings, Key, matchesKey } from '../../engine/public.js';
 import type { Component } from '../../rendering/component.js';
@@ -10,6 +10,21 @@ import { wrapTextWithAnsi } from '../../rendering/text.js';
 import { panelLayout } from '../../widgets/panel-frame.js';
 import { SelectList } from '../../widgets/select-list.js';
 import { tuiChalk as chalk, tuiColors as colors, tuiSelectListTheme } from '../../theme/runtime.js';
+
+export interface TuiOAuthLoginOptions {
+  readonly providerId: string;
+  readonly providerName: string;
+  application: Pick<
+    McodeProviderApplication,
+    'connectOAuthProvider' | 'getOAuthProviderStatus' | 'cancelOAuthProviderLogin'
+  >;
+  openExternalTarget(url: string): Promise<void>;
+  /** Fired once per login with the full authorize URL (for transcript echo). */
+  onAuthUrl?(url: string): void;
+  onConnected(): void;
+  onClose(): void;
+  requestRender(): void;
+}
 
 interface CodexLoginOptions {
   application: Pick<
@@ -23,13 +38,13 @@ interface CodexLoginOptions {
 }
 
 /** Pi's method selector and device-code prompt, projected from the Runtime-owned login. */
-export class TuiCodexLogin implements Component {
+export class TuiOAuthLogin implements Component {
   readonly fullscreenViewport = true;
   readonly handlesViewportKeys = true;
   private readonly methods: SelectList;
   private phase: 'loading' | 'select' | 'starting' | 'waiting' | 'failed' = 'loading';
   private method: McodeCodexOAuthLoginMethod = 'browser';
-  private status: McodeCodexOAuthStatus | undefined;
+  private status: McodeOAuthProviderStatus | undefined;
   private error: string | undefined;
   private browserHint: string | undefined;
   private openedUrl: string | undefined;
@@ -37,7 +52,7 @@ export class TuiCodexLogin implements Component {
   private disposed = false;
   private cancelling = false;
 
-  constructor(private readonly options: CodexLoginOptions) {
+  constructor(private readonly options: TuiOAuthLoginOptions) {
     this.methods = new SelectList(
       [
         {
@@ -64,9 +79,14 @@ export class TuiCodexLogin implements Component {
 
   async resume(): Promise<void> {
     try {
-      const status = await this.options.application.getCodexOAuthStatus();
+      const status = await this.options.application.getOAuthProviderStatus(
+        this.options.providerId,
+      );
       if (this.cancelling && status.loginId) {
-        await this.options.application.cancelCodexOAuthLogin(status.loginId);
+        await this.options.application.cancelOAuthProviderLogin(
+          this.options.providerId,
+          status.loginId,
+        );
       } else if (!this.disposed) this.update(status);
     } catch (error) {
       this.fail(error);
@@ -100,7 +120,10 @@ export class TuiCodexLogin implements Component {
     clearTimeout(this.timer);
     try {
       if (this.status?.loginId) {
-        await this.options.application.cancelCodexOAuthLogin(this.status.loginId);
+        await this.options.application.cancelOAuthProviderLogin(
+          this.options.providerId,
+          this.status.loginId,
+        );
       }
       if (!this.disposed) this.options.onClose();
     } catch (error) {
@@ -124,14 +147,22 @@ export class TuiCodexLogin implements Component {
     const body =
       this.phase === 'select'
         ? this.methods.renderViewport(layout.contentWidth, layout.bodyHeight)
-        : this.body().flatMap((line) => wrapTextWithAnsi(line, layout.contentWidth));
-    return layout.render({ title: 'Connect OpenAI Codex', body }, this.error ? 'error' : 'signal');
+        : this.body().flatMap((line) =>
+            // URLs must never wrap: a wrapped URL copies the panel border into
+            // the link and corrupts it. Keep them on one line even if clipped.
+            /^https?:\/\//.test(line) ? [line] : wrapTextWithAnsi(line, layout.contentWidth),
+          );
+    return layout.render(
+      { title: `Connect ${this.options.providerName}`, body },
+      this.error ? 'error' : 'signal',
+    );
   }
 
   private body(): string[] {
+    const name = this.options.providerName;
     if (this.cancelling) return ['Cancelling sign-in…'];
-    if (this.phase === 'loading') return ['Checking Codex sign-in…'];
-    if (this.phase === 'starting') return ['Starting Codex sign-in…'];
+    if (this.phase === 'loading') return [`Checking ${name} sign-in…`];
+    if (this.phase === 'starting') return [`Starting ${name} sign-in…`];
     if (this.error) return [chalk.hex(colors.error)(this.error)];
     const device = this.status?.deviceCode;
     const url = device?.verificationUri ?? this.status?.authUrl;
@@ -160,9 +191,14 @@ export class TuiCodexLogin implements Component {
     this.browserHint = undefined;
     this.options.requestRender();
     try {
-      const status = await this.options.application.connectCodexOAuth({ method });
+      const status = await this.options.application.connectOAuthProvider(this.options.providerId, {
+        method,
+      });
       if (this.cancelling && status.loginId) {
-        await this.options.application.cancelCodexOAuthLogin(status.loginId);
+        await this.options.application.cancelOAuthProviderLogin(
+          this.options.providerId,
+          status.loginId,
+        );
         return;
       }
       if (!this.disposed) this.update(status);
@@ -171,7 +207,7 @@ export class TuiCodexLogin implements Component {
     }
   }
 
-  private update(status: McodeCodexOAuthStatus): void {
+  private update(status: McodeOAuthProviderStatus): void {
     if (this.cancelling) return;
     this.status = status;
     this.error = undefined;
@@ -185,6 +221,7 @@ export class TuiCodexLogin implements Component {
       const url = status.deviceCode?.verificationUri ?? status.authUrl;
       if (url && url !== this.openedUrl) {
         this.openedUrl = url;
+        this.options.onAuthUrl?.(url);
         void this.openBrowser(url);
       }
       clearTimeout(this.timer);
@@ -195,7 +232,7 @@ export class TuiCodexLogin implements Component {
     } else if (status.state === 'failed' || status.state === 'hidden') {
       this.phase = 'failed';
       this.error = sanitizeTerminalText(
-        status.error ?? 'Codex sign-in is unavailable in this build.',
+        status.error ?? `${this.options.providerName} sign-in is unavailable in this build.`,
       );
     } else {
       this.phase = 'select';
@@ -217,8 +254,34 @@ export class TuiCodexLogin implements Component {
     if (this.disposed) return;
     this.phase = 'failed';
     this.error = sanitizeTerminalText(
-      error instanceof Error ? error.message : 'Codex sign-in failed. Retry to continue.',
+      error instanceof Error
+        ? error.message
+        : `${this.options.providerName} sign-in failed. Retry to continue.`,
     );
     this.options.requestRender();
+  }
+}
+
+/**
+ * OpenAI Codex sign-in keeps its dedicated Runtime port methods; the panel
+ * itself is the generic OAuth login bound to the `openai-codex` provider.
+ */
+export class TuiCodexLogin extends TuiOAuthLogin {
+  constructor(options: CodexLoginOptions) {
+    super({
+      providerId: 'openai-codex',
+      providerName: 'OpenAI Codex',
+      application: {
+        connectOAuthProvider: (_providerId, loginOptions) =>
+          options.application.connectCodexOAuth(loginOptions),
+        getOAuthProviderStatus: () => options.application.getCodexOAuthStatus(),
+        cancelOAuthProviderLogin: (_providerId, loginId) =>
+          options.application.cancelCodexOAuthLogin(loginId),
+      },
+      openExternalTarget: options.openExternalTarget,
+      onConnected: options.onConnected,
+      onClose: options.onClose,
+      requestRender: options.requestRender,
+    });
   }
 }

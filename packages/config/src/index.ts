@@ -69,6 +69,13 @@ export type {
   ModelSelectionSource,
 } from './model-availability.js';
 export {
+  OAUTH_PROVIDER_IDS,
+  OPENAI_CODEX_PROVIDER_ID,
+  isOAuthProviderId,
+  oauthAuthFileName,
+} from './oauth-providers.js';
+export type { OAuthProviderId } from './oauth-providers.js';
+export {
   LEGACY_DATA_DIR_BASENAME,
   NEW_DATA_DIR_BASENAME,
   getLegacyDataDirPath,

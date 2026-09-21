@@ -14,6 +14,7 @@ import type { McodeProviderCliRequest } from './provider-command.js';
 import {
   isModelProviderApiFormat,
   MCODE_PROVIDER_API_FORMATS,
+  type McodeCodexOAuthLoginMethod,
   type McodeProviderApiFormat,
 } from '../provider/contract.js';
 import type { McodePluginCliRequest, McodePluginMarketplace } from '../plugin/contract.js';
@@ -271,6 +272,30 @@ export function createTuiProgram(options: CreateTuiProgramOptions): Command {
       }),
     );
 
+  provider
+    .command('login')
+    .description('Sign in to an OAuth provider')
+    .argument('<provider-id>', 'OAuth provider id (see provider list)')
+    .option('--method <method>', 'browser or device_code', parseOAuthLoginMethod)
+    .option('--no-browser', 'print the authorization URL without opening a browser')
+    .allowExcessArguments(false)
+    .action(
+      (providerId: string, commandOptions: { method?: McodeCodexOAuthLoginMethod; browser?: boolean }) =>
+        runProvider({
+          action: 'login',
+          providerId,
+          method: commandOptions.method,
+          browser: commandOptions.browser,
+        }),
+    );
+
+  provider
+    .command('logout')
+    .description('Sign out of an OAuth provider')
+    .argument('<provider-id>', 'OAuth provider id')
+    .allowExcessArguments(false)
+    .action((providerId: string) => runProvider({ action: 'logout', providerId }));
+
   const plugin = program
     .command('plugin')
     .description('Manage MiniMax Code Plugins')
@@ -370,6 +395,11 @@ function resolveExecReviewOptions(exec: Command, review: Command): RawTuiExecOpt
     }
   }
   return options;
+}
+
+function parseOAuthLoginMethod(value: string): McodeCodexOAuthLoginMethod {
+  if (value === 'browser' || value === 'device_code') return value;
+  throw new InvalidArgumentError('Method must be browser or device_code.');
 }
 
 function collectOptionValue(value: string, previous: string[]): string[] {
