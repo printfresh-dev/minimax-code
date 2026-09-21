@@ -8,7 +8,9 @@ import {
 
 import { LocalModelCache } from './catalog/model-cache.js';
 import { ProviderPresetCatalog } from './catalog/provider-presets/provider-presets.service.js';
-import { CodexOAuthManager } from './codex-oauth.js';
+import { CODEX_OAUTH_SPEC } from './codex-oauth.js';
+import { OAuthProviderManager } from './oauth-manager.js';
+import { OAUTH_PROVIDER_SPECS } from './oauth-providers.js';
 import { ModelDiscoveryClient } from './connectivity/discover-models.js';
 import { ModelConnectionTester } from './connectivity/test-connection.js';
 import type {
@@ -33,7 +35,7 @@ export interface InitializeModelSystemOptions {
 export interface ModelSystemOwner {
   readonly resolver: LocalModelResolver;
   readonly providers: LocalModelProviderService;
-  readonly oauth: CodexOAuthManager;
+  readonly oauth: OAuthProviderManager;
   readonly listProviderPresets: () => Promise<ByokProviderPresetView[]>;
 }
 
@@ -74,12 +76,15 @@ export function initializeModelSystem(options: InitializeModelSystemOptions): Mo
       };
     },
   });
-  const oauth = new CodexOAuthManager({
-    configGetter: options.config.read,
-    fetchImpl: options.fetchImpl,
-    updateByokConfig: options.config.updateByok,
-    removeLegacyProvider: options.config.removeProvider,
-  });
+  const oauth = new OAuthProviderManager(
+    {
+      configGetter: options.config.read,
+      fetchImpl: options.fetchImpl,
+      updateByokConfig: options.config.updateByok,
+      removeLegacyProvider: options.config.removeProvider,
+    },
+    [CODEX_OAUTH_SPEC, ...OAUTH_PROVIDER_SPECS],
+  );
   const providers = new LocalModelProviderService({
     configGetter: options.config.read,
     updateByokConfig: options.config.updateByok,
@@ -87,7 +92,7 @@ export function initializeModelSystem(options: InitializeModelSystemOptions): Mo
     tester: new ModelConnectionTester({ fetchImpl: options.fetchImpl }),
     discoverer: new ModelDiscoveryClient(options.fetchImpl),
     compareAndSetModelContext: options.config.compareAndSetModelContext,
-    removeProviderCredentials: (providerKey) => oauth.removeCredentials(providerKey),
+    removeProviderCredentials: (providerKey) => oauth.removeProviderCredentials(providerKey),
     selectModel: (modelKey) => options.config.setDefaultModel(modelKey),
     ...(options.implicitCustomProviderThinking ? { implicitCustomProviderThinking: true } : {}),
   });

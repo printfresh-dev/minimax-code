@@ -13,7 +13,7 @@ export function isModelProviderApiFormat(value: unknown): value is McodeProvider
   return typeof value === 'string' && MCODE_PROVIDER_API_FORMAT_SET.has(value);
 }
 export type McodeMiniMaxModelSource = 'token_plan' | 'minimax_api_key';
-export type McodeProviderKind = 'codex-oauth' | 'minimax-oauth' | 'minimax-api-key' | 'custom';
+export type McodeProviderKind = 'codex-oauth' | 'oauth' | 'minimax-oauth' | 'minimax-api-key' | 'custom';
 
 export interface McodeProviderStatus {
   readonly state: string;
@@ -113,6 +113,31 @@ export interface McodeCodexOAuthStartResult extends McodeCodexOAuthStatus {
   readonly authUrl?: string;
 }
 
+export type McodeOAuthProviderState = 'hidden' | 'disconnected' | 'pending' | 'connected' | 'failed';
+
+export interface McodeOAuthProviderInfo {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface McodeOAuthProviderStatus {
+  readonly state: McodeOAuthProviderState;
+  readonly providerId: string;
+  readonly error?: string;
+  readonly loginId?: string;
+  readonly method?: McodeCodexOAuthLoginMethod;
+  readonly authUrl?: string;
+  readonly deviceCode?: {
+    readonly userCode: string;
+    readonly verificationUri: string;
+    readonly expiresAt: number;
+  };
+}
+
+export interface McodeOAuthProviderLoginOptions {
+  readonly method?: McodeCodexOAuthLoginMethod;
+}
+
 export interface McodeCreateProviderInput {
   readonly name?: string;
   readonly baseUrl: string;
@@ -168,6 +193,17 @@ export interface McodeProviderRuntimePort {
     input: McodeDiscoverProviderModelsInput,
   ): Promise<readonly McodeProviderModel[]>;
   listProviderPresets(): Promise<readonly McodeProviderTemplate[]>;
+  listOAuthProviders(): Promise<readonly McodeOAuthProviderInfo[]>;
+  getOAuthProviderStatus(providerId: string): Promise<McodeOAuthProviderStatus>;
+  startOAuthProviderLogin(
+    providerId: string,
+    options?: McodeOAuthProviderLoginOptions,
+  ): Promise<McodeOAuthProviderStatus>;
+  cancelOAuthProviderLogin(
+    providerId: string,
+    loginId: string,
+  ): Promise<McodeOAuthProviderStatus>;
+  removeOAuthProviderCredentials(providerId: string): Promise<void>;
   getCodexOAuthStatus(): Promise<McodeCodexOAuthStatus>;
   startCodexOAuthLogin(options?: McodeCodexOAuthLoginOptions): Promise<McodeCodexOAuthStartResult>;
   cancelCodexOAuthLogin(loginId: string): Promise<McodeCodexOAuthStatus>;

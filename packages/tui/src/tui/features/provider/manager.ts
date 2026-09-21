@@ -33,7 +33,8 @@ export interface TuiProviderManagerOptions {
   onRefresh(): Promise<McodeProviderSnapshot>;
   onRefreshModels?(provider: McodeProviderView): Promise<number>;
   onTest(providerId: string, modelId?: string): Promise<McodeProviderTestResult>;
-  onConnectCodex?(): void;
+  onConnectOAuth?(providerId: string, providerName: string): void;
+  onDisconnectOAuth?(providerId: string): Promise<void>;
   onSaveCustom?(input: McodeSaveProviderCandidateInput): Promise<McodeSaveProviderCandidateResult>;
   onSetMiniMaxApiKey(apiKey: string): Promise<void>;
   onSetMiniMaxSource(source: 'token_plan' | 'minimax_api_key'): Promise<void>;
@@ -273,8 +274,8 @@ export class TuiProviderManager implements Component, Focusable {
   private async useSelected(): Promise<void> {
     const provider = this.selectedProvider();
     if (!provider) return;
-    if (provider.kind === 'codex-oauth') {
-      await this.connectCodex(provider);
+    if (provider.kind === 'codex-oauth' || provider.kind === 'oauth') {
+      await this.connectOAuth(provider);
       return;
     }
     if (provider.kind === 'minimax-oauth') {
@@ -312,8 +313,8 @@ export class TuiProviderManager implements Component, Focusable {
       this.options.onReLogin();
       return;
     }
-    if (provider.kind === 'codex-oauth') {
-      this.setStatus('Use Enter or Space on the Codex row to start sign-in.', 'info');
+    if (provider.kind === 'codex-oauth' || provider.kind === 'oauth') {
+      this.setStatus('Use Enter or Space on the OAuth row to connect or disconnect.', 'info');
       return;
     }
     if (provider.readOnly || !this.options.onSaveCustom) {
@@ -356,17 +357,26 @@ export class TuiProviderManager implements Component, Focusable {
     this.requestRender();
   }
 
-  private async connectCodex(provider: McodeProviderView): Promise<void> {
+  private async connectOAuth(provider: McodeProviderView): Promise<void> {
     const state = provider.status?.state;
     if (state === 'connected') {
-      this.setStatus('OpenAI Codex is already connected.', 'info');
+      const disconnect = this.options.onDisconnectOAuth;
+      if (!disconnect) {
+        this.setStatus(`${provider.name} sign-out is unavailable in this host.`, 'error');
+        return;
+      }
+      await this.perform(async () => {
+        await disconnect(provider.providerId);
+        if (this.disposed) return;
+        await this.refresh(`${provider.name} disconnected.`);
+      });
       return;
     }
-    if (!this.options.onConnectCodex) {
-      this.setStatus('Codex sign-in is unavailable in this host.', 'error');
+    if (!this.options.onConnectOAuth) {
+      this.setStatus(`${provider.name} sign-in is unavailable in this host.`, 'error');
       return;
     }
-    this.options.onConnectCodex();
+    this.options.onConnectOAuth(provider.providerId, provider.name);
   }
 
   private startMiniMaxKey(replacing = false): void {
@@ -401,8 +411,8 @@ export class TuiProviderManager implements Component, Focusable {
   private async testSelected(): Promise<void> {
     const provider = this.selectedProvider();
     if (!provider) return;
-    if (provider.kind === 'codex-oauth') {
-      this.setStatus('Codex OAuth connectivity is managed by its sign-in flow.', 'info');
+    if (provider.kind === 'codex-oauth' || provider.kind === 'oauth') {
+      this.setStatus(`${provider.name} connectivity is managed by its sign-in flow.`, 'info');
       return;
     }
     if (provider.kind === 'minimax-oauth') {
@@ -507,7 +517,7 @@ function isSelectedSource(provider: McodeProviderView): boolean {
 }
 
 function markerFor(provider: McodeProviderView): string {
-  if (provider.kind === 'codex-oauth') {
+  if (provider.kind === 'codex-oauth' || provider.kind === 'oauth') {
     return provider.status?.state === 'connected' ? '✓' : '○';
   }
   if (provider.kind === 'custom') return provider.enabled ? '○' : '–';
@@ -522,8 +532,10 @@ function providerModelList(provider: McodeProviderView): string | undefined {
 }
 
 function providerDetail(provider: McodeProviderView): string {
-  if (provider.kind === 'codex-oauth') {
-    if (provider.status?.state === 'connected') return 'Connected with OpenAI OAuth';
+  if (provider.kind === 'codex-oauth' || provider.kind === 'oauth') {
+    if (provider.status?.state === 'connected') {
+      return 'Connected · Enter or Space to disconnect';
+    }
     if (provider.status?.state === 'pending') {
       return 'Sign-in pending · Enter or Space to continue';
     }
@@ -549,7 +561,7 @@ function providerDetail(provider: McodeProviderView): string {
 }
 
 function providerSummary(provider: McodeProviderView): string {
-  if (provider.kind === 'codex-oauth') {
+  if (provider.kind === 'codex-oauth' || provider.kind === 'oauth') {
     if (provider.status?.state === 'connected') return 'Connected';
     if (provider.status?.state === 'pending') return 'Waiting for sign-in';
     if (provider.status?.state === 'failed') return 'Sign-in failed';

@@ -91,6 +91,23 @@ function createHarness(
       providerId: "openai-codex" as const,
       authUrl: "https://auth.openai.example/authorize",
     })),
+    listOAuthProviders: vi.fn(async () => [
+      { id: "openai-codex", name: "OpenAI Codex" },
+    ]),
+    getOAuthProviderStatus: vi.fn(async () => ({
+      state: "disconnected" as const,
+      providerId: "openai-codex" as const,
+    })),
+    startOAuthProviderLogin: vi.fn(async () => ({
+      state: "pending" as const,
+      providerId: "openai-codex" as const,
+      authUrl: "https://auth.openai.example/authorize",
+    })),
+    cancelOAuthProviderLogin: vi.fn(async () => ({
+      state: "disconnected" as const,
+      providerId: "openai-codex" as const,
+    })),
+    removeOAuthProviderCredentials: vi.fn(async () => undefined),
     listUserModelProviders: vi.fn(async () => []),
     getMiniMaxApiKeyStatus: vi.fn(async () => ({ hasApiKey: false })),
     getMiniMaxModelSource: vi.fn(async () => "token_plan" as const),
@@ -209,9 +226,10 @@ describe("TuiFeatureFlow", () => {
     );
     login.handleInput("\r");
     await vi.waitFor(() =>
-      expect(harness.runtime.startCodexOAuthLogin).toHaveBeenCalledWith({
-        method: "browser",
-      }),
+      expect(harness.runtime.startOAuthProviderLogin).toHaveBeenCalledWith(
+        "openai-codex",
+        { method: "browser" },
+      ),
     );
     await vi.waitFor(() =>
       expect(openExternalTarget).toHaveBeenCalledWith(
@@ -679,9 +697,10 @@ describe("TuiFeatureFlow", () => {
     );
     login.handleInput("\r");
     await vi.waitFor(() =>
-      expect(harness.runtime.startCodexOAuthLogin).toHaveBeenCalledWith({
-        method: "browser",
-      }),
+      expect(harness.runtime.startOAuthProviderLogin).toHaveBeenCalledWith(
+        "openai-codex",
+        { method: "browser" },
+      ),
     );
     await vi.waitFor(() =>
       expect(openExternalTarget).toHaveBeenCalledWith(

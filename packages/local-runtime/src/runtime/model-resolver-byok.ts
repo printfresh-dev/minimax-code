@@ -139,7 +139,7 @@ export function planCustomProviderResolution(input: {
     ...(apiKey ? { apiKey } : {}),
     ...(authProvider ? { authProvider, runtimeProvider: authProvider } : {}),
     baseUrl:
-      api === 'openai-codex-responses'
+      api === 'openai-codex-responses' || api === 'google-gemini-cli' || api === 'devin-agent'
         ? baseUrl.replace(/\/+$/u, '')
         : normalizeProviderBaseUrl(api as ModelProviderApi, baseUrl),
     contextWindow: modelConfig.limit?.context ?? BYOK_FALLBACK_MODEL_LIMITS.contextWindow,
@@ -152,7 +152,9 @@ function resolveCustomProviderApi(value: unknown): Api {
   if (
     value === 'openai-completions' ||
     value === 'openai-responses' ||
-    value === 'openai-codex-responses'
+    value === 'openai-codex-responses' ||
+    value === 'google-gemini-cli' ||
+    value === 'devin-agent'
   ) {
     return value;
   }

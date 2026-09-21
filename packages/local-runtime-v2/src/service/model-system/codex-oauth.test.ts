@@ -7,7 +7,8 @@ import type {
   LocalCustomProviderConfig,
   LocalRuntimeConfig,
 } from "./contracts.js";
-import { CodexOAuthManager, CodexOAuthError } from "./codex-oauth.js";
+import { CodexOAuthError, CODEX_OAUTH_SPEC } from "./codex-oauth.js";
+import { OAuthProviderManager } from "./oauth-manager.js";
 
 function createConfig(enabled: boolean): LocalRuntimeConfig {
   return {
@@ -52,7 +53,7 @@ describe("CodexOAuthManager", () => {
   it("keeps the capability hidden and rejects login while disabled", async () => {
     const config = createConfig(false);
     const login = vi.fn();
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       authStorageFactory: () => ({
         getCredentials: async () => undefined,
@@ -61,13 +62,13 @@ describe("CodexOAuthManager", () => {
         login,
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    expect(manager.getStatus()).toEqual({
+    expect(manager.getProviderStatus("openai-codex")).toEqual({
       state: "hidden",
       providerId: "openai-codex",
     });
-    await expect(manager.startLogin()).rejects.toMatchObject({
+    await expect(manager.startProviderLogin("openai-codex")).rejects.toMatchObject({
       status: 404,
       code: "FEATURE_DISABLED",
     } satisfies Partial<CodexOAuthError>);
@@ -78,7 +79,7 @@ describe("CodexOAuthManager", () => {
     const config = createConfig(true);
     const update = createUpdater(config);
     const login = vi.fn();
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       updateByokConfig: update,
       authStorageFactory: () => ({
@@ -88,9 +89,9 @@ describe("CodexOAuthManager", () => {
         login,
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    await expect(manager.startLogin()).resolves.toMatchObject({
+    await expect(manager.startProviderLogin("openai-codex")).resolves.toMatchObject({
       state: "connected",
     });
     expect(login).not.toHaveBeenCalled();
@@ -108,7 +109,7 @@ describe("CodexOAuthManager", () => {
   it("does not recreate a deleted OAuth configuration group from stored credentials", async () => {
     const config = createConfig(true);
     const update = createUpdater(config);
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       updateByokConfig: update,
       authStorageFactory: () => ({
@@ -118,15 +119,15 @@ describe("CodexOAuthManager", () => {
         login: vi.fn(),
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    await expect(manager.refreshModels()).rejects.toMatchObject({
+    await expect(manager.refreshProviderModels("openai-codex")).rejects.toMatchObject({
       code: "OAUTH_NOT_CONNECTED",
     });
 
     expect(update).not.toHaveBeenCalled();
     expect(config.custom_provider).toBeUndefined();
-    expect(manager.getStatus()).toEqual({
+    expect(manager.getProviderStatus("openai-codex")).toEqual({
       state: "disconnected",
       providerId: "openai-codex",
     });
@@ -139,7 +140,7 @@ describe("CodexOAuthManager", () => {
       models: { "gpt-test": {} },
     };
     const update = createUpdater(config);
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       updateByokConfig: update,
       authStorageFactory: () => ({
@@ -149,9 +150,9 @@ describe("CodexOAuthManager", () => {
         login: vi.fn(),
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    await expect(manager.refreshModels()).rejects.toMatchObject({
+    await expect(manager.refreshProviderModels("openai-codex")).rejects.toMatchObject({
       status: 503,
       code: "PROVIDER_CONFIG_UNAVAILABLE",
     } satisfies Partial<CodexOAuthError>);
@@ -175,7 +176,7 @@ describe("CodexOAuthManager", () => {
         connected = true;
       },
     );
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       fetchImpl,
       updateByokConfig: createUpdater(config),
@@ -186,16 +187,16 @@ describe("CodexOAuthManager", () => {
         login,
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    await expect(manager.startLogin()).resolves.toEqual({
+    await expect(manager.startProviderLogin("openai-codex")).resolves.toEqual({
       state: "pending",
       providerId: "openai-codex",
       authUrl: "https://auth.openai.test/authorize",
       loginId: expect.any(String),
       method: "browser",
     });
-    expect(manager.getStatus()).toMatchObject({ state: "pending" });
+    expect(manager.getProviderStatus("openai-codex")).toMatchObject({ state: "pending" });
     await loginCallbacks?.fetch?.("https://auth.openai.test/probe");
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://auth.openai.test/probe",
@@ -207,7 +208,7 @@ describe("CodexOAuthManager", () => {
 
     completion.resolve();
     await vi.waitFor(() =>
-      expect(manager.getStatus()).toMatchObject({ state: "connected" }),
+      expect(manager.getProviderStatus("openai-codex")).toMatchObject({ state: "connected" }),
     );
     expect(config.custom_provider?.["openai-codex"]?.kind).toBe("oauth");
   });
@@ -229,7 +230,7 @@ describe("CodexOAuthManager login edge cases", () => {
         connected = true;
       },
     );
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       updateByokConfig: createUpdater(config),
       authStorageFactory: () => ({
@@ -239,11 +240,11 @@ describe("CodexOAuthManager login edge cases", () => {
         login,
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    const first = manager.startLogin();
+    const first = manager.startProviderLogin("openai-codex");
     await vi.waitFor(() => expect(callbacks).toBeDefined());
-    const second = manager.startLogin();
+    const second = manager.startProviderLogin("openai-codex");
     callbacks?.onAuth({ url: " https://auth.openai.test/authorize " });
     callbacks?.onAuth({ url: "https://auth.openai.test/ignored" });
 
@@ -267,7 +268,7 @@ describe("CodexOAuthManager login edge cases", () => {
 
     completion.resolve();
     await vi.waitFor(() =>
-      expect(manager.getStatus()).toMatchObject({ state: "connected" }),
+      expect(manager.getProviderStatus("openai-codex")).toMatchObject({ state: "connected" }),
     );
   });
 
@@ -289,7 +290,7 @@ describe("CodexOAuthManager login edge cases", () => {
           });
       },
     );
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       updateByokConfig: createUpdater(config),
       authStorageFactory: () => ({
@@ -299,9 +300,9 @@ describe("CodexOAuthManager login edge cases", () => {
         login,
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    await expect(manager.startLogin()).rejects.toMatchObject({ code });
+    await expect(manager.startProviderLogin("openai-codex")).rejects.toMatchObject({ code });
   });
 
   it.each([
@@ -314,7 +315,7 @@ describe("CodexOAuthManager login edge cases", () => {
     ["socket closed", "Codex OAuth login failed."],
   ])("sanitizes login failure %s", async (message, expected) => {
     const config = createConfig(true);
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       updateByokConfig: createUpdater(config),
       authStorageFactory: () => ({
@@ -324,13 +325,13 @@ describe("CodexOAuthManager login edge cases", () => {
         login: vi.fn(async () => Promise.reject(new Error(message))),
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    await expect(manager.startLogin()).rejects.toMatchObject({
+    await expect(manager.startProviderLogin("openai-codex")).rejects.toMatchObject({
       code: "OAUTH_LOGIN_FAILED",
       message: expected,
     });
-    expect(manager.getStatus()).toEqual({
+    expect(manager.getProviderStatus("openai-codex")).toEqual({
       state: "failed",
       providerId: "openai-codex",
       error: expected,
@@ -342,7 +343,7 @@ describe("CodexOAuthManager reconciliation and credentials", () => {
   it("reports explicit refresh failures and keeps legacy credentials usable", async () => {
     const config = createConfig(true);
     config.provider["openai-codex"] = { models: { legacy: {} } };
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       updateByokConfig: vi.fn(async () =>
         Promise.reject(new Error("EADDRINUSE")),
@@ -355,12 +356,12 @@ describe("CodexOAuthManager reconciliation and credentials", () => {
         login: vi.fn(),
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    await expect(manager.refreshModels()).rejects.toMatchObject({
+    await expect(manager.refreshProviderModels("openai-codex")).rejects.toMatchObject({
       code: "MODEL_DISCOVERY_FAILED",
     });
-    expect(manager.getStatus()).toEqual({
+    expect(manager.getProviderStatus("openai-codex")).toEqual({
       state: "connected",
       providerId: "openai-codex",
       error: "Codex OAuth callback port 1455 is already in use.",
@@ -387,7 +388,7 @@ describe("CodexOAuthManager reconciliation and credentials", () => {
     const removeLegacyProvider = vi.fn(async () => {
       delete config.provider["openai-codex"];
     });
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       updateByokConfig: createUpdater(config),
       removeLegacyProvider,
@@ -398,9 +399,9 @@ describe("CodexOAuthManager reconciliation and credentials", () => {
         login: vi.fn(),
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    await expect(manager.refreshModels()).resolves.toMatchObject({
+    await expect(manager.refreshProviderModels("openai-codex")).resolves.toMatchObject({
       state: "connected",
     });
     expect(removeLegacyProvider).toHaveBeenCalledWith("openai-codex");
@@ -425,7 +426,7 @@ describe("CodexOAuthManager reconciliation and credentials", () => {
   it("removes only supported credentials", () => {
     const config = createConfig(true);
     const removeOAuth = vi.fn();
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       authStorageFactory: () => ({
         getCredentials: async () => undefined,
@@ -434,12 +435,12 @@ describe("CodexOAuthManager reconciliation and credentials", () => {
         login: vi.fn(),
       }),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
 
-    expect(() => manager.removeCredentials("other")).toThrowError(
+    expect(() => manager.removeProviderCredentials("other")).toThrowError(
       expect.objectContaining({ code: "PROVIDER_AUTH_UNAVAILABLE" }),
     );
-    manager.removeCredentials("openai-codex");
+    manager.removeProviderCredentials("openai-codex");
     expect(removeOAuth).toHaveBeenCalledWith("openai-codex");
   });
 });
@@ -474,7 +475,7 @@ function connectedManager(
   config: LocalRuntimeConfig,
   catalogGetter = vi.fn(async () => codexCatalog()),
 ) {
-  const manager = new CodexOAuthManager({
+  const manager = new OAuthProviderManager({
     configGetter: () => config,
     updateByokConfig: createUpdater(config),
     authStorageFactory: () => ({
@@ -484,7 +485,7 @@ function connectedManager(
       login: vi.fn(),
     }),
     catalogGetter,
-  });
+  }, [CODEX_OAUTH_SPEC]);
   return { manager, catalogGetter };
 }
 
@@ -518,7 +519,7 @@ describe("Codex OAuth catalog refresh", () => {
       config,
       vi.fn(async () => catalog),
     );
-    await manager.refreshModels();
+    await manager.refreshProviderModels("openai-codex");
     const provider = config.custom_provider["openai-codex"];
     if (!provider) throw new Error("Expected a persisted OAuth provider");
     expect(provider.enabled).toBe(false);
@@ -554,7 +555,7 @@ describe("Codex OAuth catalog refresh", () => {
         return codexCatalog();
       }),
     );
-    const refresh = manager.refreshModels();
+    const refresh = manager.refreshProviderModels("openai-codex");
     config.custom_provider["openai-codex"] = {
       models: {
         "gpt-test": {
@@ -577,19 +578,19 @@ describe("Codex OAuth catalog refresh", () => {
     const config = createConfig(true);
     config.custom_provider = { "openai-codex": codexCatalog() };
     const { manager, catalogGetter } = connectedManager(config);
-    manager.getStatus();
-    await manager.startLogin();
-    manager.getStatus();
+    manager.getProviderStatus("openai-codex");
+    await manager.startProviderLogin("openai-codex");
+    manager.getProviderStatus("openai-codex");
     expect(catalogGetter).not.toHaveBeenCalled();
-    await Promise.all([manager.refreshModels(), manager.refreshModels()]);
+    await Promise.all([manager.refreshProviderModels("openai-codex"), manager.refreshProviderModels("openai-codex")]);
     expect(catalogGetter).toHaveBeenCalledTimes(1);
-    await manager.refreshModels();
+    await manager.refreshProviderModels("openai-codex");
     expect(catalogGetter).toHaveBeenCalledTimes(2);
   });
 
   it("rejects model fetching when OAuth is disabled", async () => {
     const { manager, catalogGetter } = connectedManager(createConfig(false));
-    await expect(manager.refreshModels()).rejects.toMatchObject({
+    await expect(manager.refreshProviderModels("openai-codex")).rejects.toMatchObject({
       code: "FEATURE_DISABLED",
     });
     expect(catalogGetter).not.toHaveBeenCalled();
@@ -605,20 +606,20 @@ describe("Codex OAuth catalog refresh", () => {
         throw new Error("secret-token");
       }),
     );
-    await expect(manager.refreshModels()).rejects.toMatchObject({
+    await expect(manager.refreshProviderModels("openai-codex")).rejects.toMatchObject({
       code: "MODEL_DISCOVERY_FAILED",
     });
     expect(config.custom_provider).toEqual(before);
-    expect(manager.getStatus()).toMatchObject({
+    expect(manager.getProviderStatus("openai-codex")).toMatchObject({
       state: "connected",
       error: expect.stringContaining("model discovery failed"),
     });
-    expect(JSON.stringify(manager.getStatus())).not.toContain("secret-token");
-    manager.getStatus();
+    expect(JSON.stringify(manager.getProviderStatus("openai-codex"))).not.toContain("secret-token");
+    manager.getProviderStatus("openai-codex");
     expect(catalogGetter).toHaveBeenCalledTimes(1);
     catalogGetter.mockResolvedValue(codexCatalog());
-    await manager.refreshModels();
-    expect(manager.getStatus()).toEqual({
+    await manager.refreshProviderModels("openai-codex");
+    expect(manager.getProviderStatus("openai-codex")).toEqual({
       state: "connected",
       providerId: "openai-codex",
     });
@@ -635,7 +636,7 @@ describe("Codex OAuth catalog refresh", () => {
         return codexCatalog();
       }),
     );
-    const refresh = manager.refreshModels();
+    const refresh = manager.refreshProviderModels("openai-codex");
     delete config.custom_provider["openai-codex"];
     completion.resolve();
     await refresh;
@@ -663,19 +664,19 @@ describe("Codex OAuth catalog credential lifecycle", () => {
           return { ...codexCatalog(), models: { "new-account-model": {} } };
         });
       const { manager } = connectedManager(config, catalogGetter);
-      const oldRefresh = manager.refreshModels().catch(() => undefined);
-      manager.removeCredentials("openai-codex");
+      const oldRefresh = manager.refreshProviderModels("openai-codex").catch(() => undefined);
+      manager.removeProviderCredentials("openai-codex");
       delete config.custom_provider["openai-codex"];
-      const reconnect = manager.startLogin();
+      const reconnect = manager.startProviderLogin("openai-codex");
       expect(catalogGetter).toHaveBeenCalledTimes(2);
       oldRequest.resolve();
       await oldRefresh;
-      const concurrentReconnect = manager.startLogin();
+      const concurrentReconnect = manager.startProviderLogin("openai-codex");
       expect(catalogGetter).toHaveBeenCalledTimes(2);
-      expect(manager.getStatus().error).toBeUndefined();
+      expect(manager.getProviderStatus("openai-codex").error).toBeUndefined();
       newRequest.resolve();
       await Promise.all([reconnect, concurrentReconnect]);
-      expect(manager.getStatus()).toEqual({
+      expect(manager.getProviderStatus("openai-codex")).toEqual({
         state: "connected",
         providerId: "openai-codex",
       });
@@ -695,8 +696,8 @@ describe("Codex OAuth catalog credential lifecycle", () => {
         return codexCatalog();
       }),
     );
-    const start = manager.startLogin();
-    manager.removeCredentials("openai-codex");
+    const start = manager.startProviderLogin("openai-codex");
+    manager.removeProviderCredentials("openai-codex");
     completion.resolve();
     await expect(start).resolves.toMatchObject({ state: "disconnected" });
     expect(config.custom_provider?.["openai-codex"]).toBeUndefined();
@@ -712,8 +713,8 @@ describe("Codex OAuth catalog credential lifecycle", () => {
         return codexCatalog();
       }),
     );
-    const first = manager.startLogin();
-    const second = manager.startLogin();
+    const first = manager.startProviderLogin("openai-codex");
+    const second = manager.startProviderLogin("openai-codex");
     completion.resolve();
     await Promise.all([first, second]);
     expect(catalogGetter).toHaveBeenCalledTimes(1);
@@ -727,12 +728,12 @@ describe("Codex OAuth catalog credential lifecycle", () => {
         throw new Error("failed");
       }),
     );
-    await expect(manager.startLogin()).rejects.toMatchObject({
+    await expect(manager.startProviderLogin("openai-codex")).rejects.toMatchObject({
       code: "MODEL_DISCOVERY_FAILED",
     });
     expect(config.custom_provider).toBeUndefined();
     catalogGetter.mockResolvedValue(codexCatalog());
-    await expect(manager.startLogin()).resolves.toMatchObject({
+    await expect(manager.startProviderLogin("openai-codex")).resolves.toMatchObject({
       state: "connected",
     });
   });
@@ -781,12 +782,12 @@ describe("Codex OAuth profile credentials", () => {
         }),
       ),
     );
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       fetchImpl,
       updateByokConfig: createUpdater(config),
-    });
-    await manager.startLogin();
+    }, [CODEX_OAUTH_SPEC]);
+    await manager.startProviderLogin("openai-codex");
     expect(createStorage).toHaveBeenCalledWith(
       join(config.dataDir, "codex-auth.json"),
     );
@@ -826,12 +827,12 @@ describe("Codex OAuth profile credentials", () => {
     vi.spyOn(AuthStorage, "create").mockReturnValue(storage);
     vi.spyOn(storage, "getApiKey").mockResolvedValue(undefined);
     const fetchImpl = vi.fn<typeof fetch>();
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       fetchImpl,
       updateByokConfig: createUpdater(config),
-    });
-    await expect(manager.startLogin()).rejects.toMatchObject({
+    }, [CODEX_OAUTH_SPEC]);
+    await expect(manager.startProviderLogin("openai-codex")).rejects.toMatchObject({
       code: "OAUTH_CREDENTIALS_UNAVAILABLE",
     });
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -873,18 +874,18 @@ describe("Codex device-code login", () => {
       }
       throw new Error("Unexpected OAuth endpoint");
     });
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       fetchImpl,
       updateByokConfig: createUpdater(config),
       catalogGetter: async () => codexCatalog(),
-    });
+    }, [CODEX_OAUTH_SPEC]);
     return { manager, config, storage, fetchImpl, authorize };
   }
 
   it("uses Pi device auth with the host fetch, saves credentials and configures models after approval", async () => {
     const h = deviceHarness();
-    const start = await h.manager.startLogin({ method: "device_code" });
+    const start = await h.manager.startProviderLogin("openai-codex", { method: "device_code" });
     expect(start).toMatchObject({
       state: "pending",
       method: "device_code",
@@ -895,9 +896,9 @@ describe("Codex device-code login", () => {
         expiresAt: expect.any(Number),
       },
     });
-    expect(h.manager.getStatus()).toEqual(start);
+    expect(h.manager.getProviderStatus("openai-codex")).toEqual(start);
     await expect(
-      h.manager.startLogin({ method: "device_code" }),
+      h.manager.startProviderLogin("openai-codex", { method: "device_code" }),
     ).resolves.toEqual(start);
     expect(h.storage.getAll()["openai-codex"]).toBeUndefined();
     expect(
@@ -912,7 +913,7 @@ describe("Codex device-code login", () => {
       }),
     );
     await vi.waitFor(() =>
-      expect(h.manager.getStatus().state).toBe("connected"),
+      expect(h.manager.getProviderStatus("openai-codex").state).toBe("connected"),
     );
     expect(h.storage.getAll()["openai-codex"]).toMatchObject({
       type: "oauth",
@@ -936,16 +937,16 @@ describe("Codex device-code login", () => {
         ([, init]) => init?.signal instanceof AbortSignal,
       ),
     ).toBe(true);
-    expect(JSON.stringify(h.manager.getStatus())).not.toContain("test-refresh");
+    expect(JSON.stringify(h.manager.getProviderStatus("openai-codex"))).not.toContain("test-refresh");
   });
 
   it("cancels a pending request and prevents a late response from persisting credentials or configuring models", async () => {
     const h = deviceHarness();
     const piLogin = vi.spyOn(AuthStorage.prototype, "login");
-    const start = await h.manager.startLogin({ method: "device_code" });
+    const start = await h.manager.startProviderLogin("openai-codex", { method: "device_code" });
     await vi.waitFor(() => expect(h.fetchImpl).toHaveBeenCalledTimes(2));
     const pollSignal = h.fetchImpl.mock.calls[1]![1]?.signal;
-    expect(h.manager.cancelLogin(start.loginId!)).toMatchObject({
+    expect(h.manager.cancelProviderLogin("openai-codex", start.loginId!)).toMatchObject({
       state: "disconnected",
     });
     expect(pollSignal?.aborted).toBe(true);
@@ -959,7 +960,7 @@ describe("Codex device-code login", () => {
     await Promise.resolve();
     expect(h.storage.getAll()["openai-codex"]).toBeUndefined();
     expect(h.config.custom_provider).toBeUndefined();
-    expect(h.manager.getStatus()).toEqual({
+    expect(h.manager.getProviderStatus("openai-codex")).toEqual({
       state: "disconnected",
       providerId: "openai-codex",
     });
@@ -967,17 +968,17 @@ describe("Codex device-code login", () => {
 
   it("does not let a stale cancel stop a newer attempt and requires cancellation before switching methods", async () => {
     const h = deviceHarness();
-    const first = await h.manager.startLogin({ method: "device_code" });
-    h.manager.cancelLogin(first.loginId!);
-    const second = await h.manager.startLogin({ method: "device_code" });
+    const first = await h.manager.startProviderLogin("openai-codex", { method: "device_code" });
+    h.manager.cancelProviderLogin("openai-codex", first.loginId!);
+    const second = await h.manager.startProviderLogin("openai-codex", { method: "device_code" });
     expect(second.loginId).not.toEqual(first.loginId);
-    expect(h.manager.cancelLogin(first.loginId!)).toEqual(second);
+    expect(h.manager.cancelProviderLogin("openai-codex", first.loginId!)).toEqual(second);
     await expect(
-      h.manager.startLogin({ method: "browser" }),
+      h.manager.startProviderLogin("openai-codex", { method: "browser" }),
     ).rejects.toMatchObject({
       code: "OAUTH_LOGIN_PENDING",
     });
-    h.manager.cancelLogin(second.loginId!);
+    h.manager.cancelProviderLogin("openai-codex", second.loginId!);
   });
 
   it("aborts expired device codes, clears pending details and allows retry", async () => {
@@ -1004,7 +1005,7 @@ describe("Codex device-code login", () => {
         );
       },
     );
-    const manager = new CodexOAuthManager({
+    const manager = new OAuthProviderManager({
       configGetter: () => config,
       authStorageFactory: () => ({
         getCredentials: async () => undefined,
@@ -1012,16 +1013,16 @@ describe("Codex device-code login", () => {
         removeOAuth: vi.fn(),
         login,
       }),
-    });
-    await manager.startLogin({ method: "device_code" });
+    }, [CODEX_OAUTH_SPEC]);
+    await manager.startProviderLogin("openai-codex", { method: "device_code" });
     await vi.advanceTimersByTimeAsync(1000);
-    expect(manager.getStatus()).toMatchObject({
+    expect(manager.getProviderStatus("openai-codex")).toMatchObject({
       state: "failed",
       error: "Codex sign-in timed out. Start login again.",
     });
-    expect(manager.getStatus().deviceCode).toBeUndefined();
-    const retry = await manager.startLogin({ method: "device_code" });
-    manager.cancelLogin(retry.loginId!);
+    expect(manager.getProviderStatus("openai-codex").deviceCode).toBeUndefined();
+    const retry = await manager.startProviderLogin("openai-codex", { method: "device_code" });
+    manager.cancelProviderLogin("openai-codex", retry.loginId!);
     vi.useRealTimers();
   });
 });

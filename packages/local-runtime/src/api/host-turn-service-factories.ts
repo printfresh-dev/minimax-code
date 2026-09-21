@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { AuthStorage } from '@earendil-works/pi-coding-agent';
+import { oauthAuthFileName } from '@mavis/config';
 import type { LocalRuntimeConfig } from '../config/types.js';
 import {
   LocalModelResolver,
@@ -41,7 +42,7 @@ export function createLocalModelResolver(input: {
     routingContextGetter: input.routingContextGetter,
     providerAuthGetter: (provider) => {
       const authStorage = AuthStorage.create(
-        join(input.configGetter().dataDir, 'codex-auth.json'),
+        join(input.configGetter().dataDir, oauthAuthFileName(provider)),
       ) as FetchAwareAuthStorage;
       return authStorage.getApiKey(provider, { includeFallback: false, fetch: input.fetchImpl });
     },

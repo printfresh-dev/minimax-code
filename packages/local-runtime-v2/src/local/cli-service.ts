@@ -697,6 +697,48 @@ export class CliService {
     ).cancelCodexOAuthLogin(loginId);
   }
 
+  listOAuthProviders() {
+    return this.requireCapability(
+      "modelProviders",
+      "Model Provider",
+    ).listOAuthProviders();
+  }
+
+  getOAuthProviderStatus(providerId: string) {
+    return this.requireCapability(
+      "modelProviders",
+      "Model Provider",
+    ).getOAuthProviderStatus(providerId);
+  }
+
+  startOAuthProviderLogin(
+    providerId: string,
+    options?: Parameters<
+      NonNullable<
+        LocalRuntimeApplication["modelProviders"]
+      >["startOAuthProviderLogin"]
+    >[1],
+  ) {
+    return this.requireCapability(
+      "modelProviders",
+      "Model Provider",
+    ).startOAuthProviderLogin(providerId, options);
+  }
+
+  cancelOAuthProviderLogin(providerId: string, loginId: string) {
+    return this.requireCapability(
+      "modelProviders",
+      "Model Provider",
+    ).cancelOAuthProviderLogin(providerId, loginId);
+  }
+
+  removeOAuthProviderCredentials(providerId: string) {
+    return this.requireCapability(
+      "modelProviders",
+      "Model Provider",
+    ).removeOAuthProviderCredentials(providerId);
+  }
+
   getMiniMaxApiKeyStatus() {
     return this.requireCapability(
       "modelProviders",

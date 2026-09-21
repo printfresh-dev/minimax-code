@@ -26,6 +26,9 @@ import type {
   CodexOAuthStartResult,
   CodexOAuthLoginOptions,
   CodexOAuthStatus,
+  OAuthProviderLoginOptions,
+  OAuthProviderStartResult,
+  OAuthProviderStatus,
   UserModelInputView,
 } from "../../service/model-system/index.js";
 
@@ -252,6 +255,17 @@ export interface LocalRuntimeApplication {
       options?: CodexOAuthLoginOptions,
     ): Promise<CodexOAuthStartResult>;
     cancelCodexOAuthLogin(loginId: string): Promise<CodexOAuthStatus>;
+    listOAuthProviders(): Promise<readonly { id: string; name: string }[]>;
+    getOAuthProviderStatus(providerId: string): Promise<OAuthProviderStatus>;
+    startOAuthProviderLogin(
+      providerId: string,
+      options?: OAuthProviderLoginOptions,
+    ): Promise<OAuthProviderStartResult>;
+    cancelOAuthProviderLogin(
+      providerId: string,
+      loginId: string,
+    ): Promise<OAuthProviderStatus>;
+    removeOAuthProviderCredentials(providerId: string): Promise<void>;
     listUser(): Promise<readonly Record<string, unknown>[]>;
     getMiniMaxApiKeyStatus(): Promise<Record<string, unknown>>;
     getMiniMaxModelSource(): Promise<"token_plan" | "minimax_api_key">;

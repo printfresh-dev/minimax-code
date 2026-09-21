@@ -101,14 +101,10 @@ function createManager(
 
 describe("TuiProviderManager", () => {
   it("starts the independent Codex OAuth flow from its provider row", async () => {
-    const onConnectCodex = vi.fn(async () => ({
-      state: "pending" as const,
-      providerId: "openai-codex" as const,
-      authUrl: "https://auth.openai.example/authorize",
-    }));
+    const onConnectOAuth = vi.fn();
     const manager = createManager({
       snapshot: snapshotWithCodex,
-      onConnectCodex,
+      onConnectOAuth,
     });
 
     manager.handleInput("\u001b[A");
@@ -117,15 +113,13 @@ describe("TuiProviderManager", () => {
     );
     manager.handleInput("\r");
 
-    await vi.waitFor(() => expect(onConnectCodex).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(onConnectOAuth).toHaveBeenCalledWith("openai-codex", "OpenAI Codex"),
+    );
   });
 
   it("resumes the Codex login panel while sign-in is pending", async () => {
-    const onConnectCodex = vi.fn(async () => ({
-      state: "pending" as const,
-      providerId: "openai-codex" as const,
-      authUrl: "https://auth.openai.example/authorize",
-    }));
+    const onConnectOAuth = vi.fn();
     const pendingSnapshot: McodeProviderSnapshot = {
       ...snapshotWithCodex,
       providers: snapshotWithCodex.providers.map((provider) =>
@@ -136,13 +130,15 @@ describe("TuiProviderManager", () => {
     };
     const manager = createManager({
       snapshot: pendingSnapshot,
-      onConnectCodex,
+      onConnectOAuth,
     });
 
     manager.handleInput("\u001b[A");
     manager.handleInput("\r");
 
-    await vi.waitFor(() => expect(onConnectCodex).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(onConnectOAuth).toHaveBeenCalledWith("openai-codex", "OpenAI Codex"),
+    );
   });
 
   it("uses the Pi cancel binding to close the provider list", () => {

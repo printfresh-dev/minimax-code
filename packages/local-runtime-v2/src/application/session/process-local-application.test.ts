@@ -39,7 +39,7 @@ describe("createProcessLocalApplication account and usage", () => {
         } as never,
         providers: { getMinimaxModelSource: () => "token_plan" } as never,
         listProviderPresets: vi.fn(async () => []),
-        oauth: { getStatus: vi.fn(), startLogin: vi.fn() } as never,
+        oauth: { getProviderStatus: vi.fn(), startProviderLogin: vi.fn(), listProviders: vi.fn(() => []), removeProviderCredentials: vi.fn() } as never,
       },
     });
     await expect(
@@ -103,7 +103,7 @@ describe("createProcessLocalApplication account and usage", () => {
         application: {} as never,
         providers: { getMinimaxModelSource } as never,
         listProviderPresets: vi.fn(async () => []),
-        oauth: { getStatus: vi.fn(), startLogin: vi.fn() } as never,
+        oauth: { getProviderStatus: vi.fn(), startProviderLogin: vi.fn(), listProviders: vi.fn(() => []), removeProviderCredentials: vi.fn() } as never,
       },
     });
 
@@ -184,19 +184,21 @@ describe("createProcessLocalApplication capabilities", () => {
       },
     ]);
     const oauth = {
-      cancelLogin: vi.fn(() => ({
+      cancelProviderLogin: vi.fn(() => ({
         state: "disconnected" as const,
         providerId: "openai-codex" as const,
       })),
-      getStatus: vi.fn(() => ({
+      getProviderStatus: vi.fn(() => ({
         state: "disconnected" as const,
         providerId: "openai-codex" as const,
       })),
-      startLogin: vi.fn(async () => ({
+      startProviderLogin: vi.fn(async () => ({
         state: "pending" as const,
         providerId: "openai-codex" as const,
         authUrl: "https://auth.example",
       })),
+      listProviders: vi.fn(() => []),
+      removeProviderCredentials: vi.fn(),
     };
 
     const application = createProcessLocalApplication({
@@ -255,11 +257,11 @@ describe("createProcessLocalApplication capabilities", () => {
       providerId: "openai-codex",
       authUrl: "https://auth.example",
     });
-    expect(listProviderPresets).toHaveBeenCalledOnce();
-    expect(oauth.getStatus).toHaveBeenCalledOnce();
-    expect(oauth.startLogin).toHaveBeenCalledWith({ method: "device_code" });
+    expect(oauth.getProviderStatus).toHaveBeenCalledOnce();
+    expect(oauth.startProviderLogin).toHaveBeenCalledWith("openai-codex", { method: "device_code" });
     await application.modelProviders?.cancelCodexOAuthLogin("attempt-1");
-    expect(oauth.cancelLogin).toHaveBeenCalledWith("attempt-1");
+    expect(oauth.cancelProviderLogin).toHaveBeenCalledWith("openai-codex", "attempt-1");
+
     await expect(
       application.modelProviders?.saveCandidate({
         candidate: {

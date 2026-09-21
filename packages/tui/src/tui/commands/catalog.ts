@@ -304,10 +304,9 @@ const COMMAND_SOURCES: readonly TuiCommandSource[] = [
   },
   {
     name: 'login',
-    description: 'Sign in to use MiniMax Code Agent features',
+    description: 'Sign in to a MiniMax account or an OAuth provider',
     category: 'Runtime',
     discoverability: 'contextual',
-    visibleWhen: (context) => !context.managedTokenPresent,
   },
   {
     name: 'logout',
